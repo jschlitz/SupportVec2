@@ -48,7 +48,7 @@ namespace SV2
         for(int i=0; i<classified.Length; i++)
         {
           //sum_n (alpha_n*y_n) == 0
-          solver.SetCoefficient(sumConstraint, alphas[i], classified[i].Item2);
+          solver.SetCoefficient(sumConstraint, alphas[i], classified[i].y);
 
           solver.SetCoefficient(goal, alphas[i], Rational.One); //the sum_n (alpha_n) part of the lagrangian
 
@@ -56,7 +56,7 @@ namespace SV2
           for (int j = 0; j <= i; j++)
           {
             // coef = y_i * y_j * Kernel(x_i, x_j). Note that the diagonal is half: the other terms appear twice and are thus doubled
-            var coef = (i==j ? -0.5 : -1.0) * classified[i].Item2 * classified[j].Item2 * kernel(classified[i].Item1, classified[j].Item1);
+            var coef = (i==j ? -0.5 : -1.0) * classified[i].y * classified[j].y * kernel(classified[i].x, classified[j].x);
             solver.SetCoefficient(goal, coef, alphas[i], alphas[j]);
           }
         }
@@ -74,7 +74,7 @@ namespace SV2
         var maxAlpha = alphaVals.Max();
         var threshold = maxAlpha * 0.00000001;
         var sVecs = alphaVals.Where(a => a > threshold)
-          .Select((a, i) => new SVInfo { y = classified[i].Item2, x = classified[i].Item1, alpha = a })
+          .Select((a, i) => new SVInfo { y = classified[i].y, x = classified[i].x, alpha = a })
           .ToArray();
 
         //w0, aka b
@@ -85,8 +85,21 @@ namespace SV2
           ).ToArray();
 
         var w0 = w0s.Average();
-      }
 
+        var classifiedTests = Classify(sVecs, testData, kernel, w0);
+        Console.WriteLine("Correctly classified {0}%", 100.0 * ((double)classifiedTests.Count(b => b)) / ((double)classifiedTests.Length));
+      }
+    }
+
+    private static bool[] Classify(SVInfo[] sVecs, Datum[] testData, Func<double[], double[], double> kernel, double w0)
+    {
+      var foo = testData
+        .Select(d => {
+          var tmp = sVecs.Select(sv => sv.alpha.ToDouble() * sv.y * kernel(sv.x, d.x)).Sum() + w0;
+          return tmp * d.y > 0;//numeric instability mignt make tmp not qute be -1/+1.
+        })
+        .ToArray();
+      return foo;
     }
 
     private struct SVInfo
@@ -108,11 +121,11 @@ namespace SV2
       return wPla.Select(x => x / mag).ToArray();
     }
 
-    private static Tuple<double[], double>[] Generate(int count, double w0, double[] w)
+    private static Datum[] Generate(int count, double w0, double[] w)
     {
       return Enumerable.Range(1, count)
         .Select(_ => GetX())
-        .Select(x => new Tuple<double[], double>(x, GetY(x, w0, w)))
+        .Select(ex => new Datum{x=ex, y=GetY(ex, w0, w)})
         .ToArray();
     }
 
